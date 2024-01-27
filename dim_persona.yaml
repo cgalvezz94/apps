@@ -4,7 +4,7 @@ entityName: "dwi.dim_persona"
 description: "Entidad para ingestar dim persona"
 business:
   dataCategory: "Académico"
-  dataEngineer: "art.gonzalez@uc.cl"
+  dataEngineer: "camilo_egz"
   dataOwner: "fernandavicuna@uc.cl,sbooth@uc.cl"
   dataSteward: "surojasd@uc.cl,acancino@uc.cl"
   dataUsability: "Reporting & Analytics"
