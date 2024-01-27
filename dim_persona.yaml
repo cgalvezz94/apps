@@ -1,0 +1,220 @@
+!!com.turingears.models.config.pipeline.Pipeline
+applicantId: "contacto@turingears.com"
+entityName: "dwi.dim_persona"
+description: "Entidad para ingestar dim persona"
+business:
+  dataCategory: "Académico"
+  dataEngineer: "art.gonzalez@uc.cl"
+  dataOwner: "fernandavicuna@uc.cl,sbooth@uc.cl"
+  dataSteward: "surojasd@uc.cl,acancino@uc.cl"
+  dataUsability: "Reporting & Analytics"
+  originSystems: ["Peoplesoft","Banner","Corp"]
+  referenceGraph: "Persona"
+  sensitiveColumns: ["RUT","ID_ETNIA","NUMEROHIJOS"]
+steps:
+  - stageId: "stage-01"
+    stageZone: "silver"
+    stageDescription: "limpiar valores de MDIUC.PERSON"
+    inputJob:
+      - columns: []
+        sourceType: "databaseSQL"
+        source:
+          databaseSQL:
+            dbTable: "MDIUC.PERSON"
+            writeMode: "overwrite"
+        sourceMemory: "VW_BR_MDIUC_PERSON"
+    transformationJob:
+      transformationType: "SQL"
+      sqlJob:
+        description: "filter columns de MDIUC.PERSON"
+        query: "SELECT normalizeWithoutDV(rut) AS RUT,
+                       dv,
+                       paternal_last_name as apellido_paterno,
+                       maternal_last_name as apellido_materno,
+                       name as nombres
+                FROM VW_BR_MDIUC_PERSON
+                WHERE rut NOT LIKE '%K' AND normalizeWithoutDV(rut) IS NOT NULL"
+    outputJob:
+      - columns: []
+        destinationType: "memory"
+        destination:
+          memory:
+            viewName: "VW_SL_MDIUC_PERSON"
+      - columns: []
+        destination:
+          file:
+            containerName: "/mnt/silver/"
+            format:
+              parquet:
+                binaryAsString: true
+                compression: "SNAPPY"
+                mergeSchema: true
+            formatFile: "PARQUET"
+        destinationType: "file"
+        partitionBy: []
+        writeMode: "overwrite"
+
+  - stageId: "stage-02"
+    stageZone: "silver"
+    stageDescription: "limpiar valores de SATURN.SPRIDEN"
+    inputJob:
+      - columns: []
+        sourceType: "databaseSQL"
+        source:
+          databaseSQL:
+            dbTable: "SATURN.SPRIDEN"
+            writeMode: "overwrite"
+        sourceMemory: "VW_BR_SATURN_SPRIDEN"
+    transformationJob:
+      transformationType: "SQL"
+      sqlJob:
+        description: "filter columns de SATURN.SPRIDEN"
+        query: "SELECT DISTINCT
+                               SPRIDEN_PIDM,
+                               normalizeWithDV(SPRIDEN_ID) as rut
+                        FROM VW_BR_SATURN_SPRIDEN
+                        WHERE normalizeWithDV(SPRIDEN_ID) IS NOT NULL"
+    outputJob:
+      - columns: []
+        destinationType: "memory"
+        destination:
+          memory:
+            viewName: "VW_SL_SATURN_SPRIDEN"
+      - columns: []
+        destination:
+          file:
+            containerName: "/mnt/silver/"
+            format:
+              parquet:
+                binaryAsString: true
+                compression: "SNAPPY"
+                mergeSchema: true
+            formatFile: "PARQUET"
+        destinationType: "file"
+        partitionBy: []
+        writeMode: "overwrite"
+
+  - stageId: "stage-03"
+    stageZone: "silver"
+    stageDescription: "limpiar valores de UC_BANNER.PERS"
+    inputJob:
+      - columns: []
+        sourceType: "databaseSQL"
+        source:
+          databaseSQL:
+            dbTable: "UC_BANNER.PERS"
+            writeMode: "overwrite"
+        sourceMemory: "VW_BR_UC_BANNER_PERS"
+    transformationJob:
+      transformationType: "SQL"
+      sqlJob:
+        description: "filter columns de UC_BANNER.PERS"
+        query: "SELECT DISTINCT
+                       COD_PERS,
+                       normalizeWithDV(RUT) AS RUT
+                FROM VW_BR_UC_BANNER_PERS
+                WHERE normalizeWithDV(RUT) IS NOT NULL"
+    outputJob:
+      - columns: []
+        destinationType: "memory"
+        destination:
+          memory:
+            viewName: "VW_SL_UC_BANNER_PERS"
+      - columns: []
+        destination:
+          file:
+            containerName: "/mnt/silver/"
+            format:
+              parquet:
+                binaryAsString: true
+                compression: "SNAPPY"
+                mergeSchema: true
+            formatFile: "PARQUET"
+        destinationType: "file"
+        partitionBy: []
+        writeMode: "overwrite"
+
+  - stageId: "stage-04"
+    stageZone: "gold"
+    stageDescription: "generar entidad dim.persona"
+    inputJob:
+      - columns: []
+        sourceType: "memory"
+        source:
+          memory:
+            viewName: "VW_SL_MDIUC_PERSON"
+        sourceMemory: "VW_SL_MDIUC_PERSON"
+      - columns: []
+        sourceType: "memory"
+        source:
+          memory:
+            viewName: "VW_SL_SATURN_SPRIDEN"
+        sourceMemory: "VW_SL_SATURN_SPRIDEN"
+      - columns: []
+        sourceType: "memory"
+        source:
+          memory:
+            viewName: "VW_SL_UC_BANNER_PERS"
+        sourceMemory: "VW_SL_UC_BANNER_PERS"
+    transformationJob:
+      transformationType: "SQL"
+      sqlJob:
+        description: "generar entidad dim.persona"
+        query: "SELECT CAST(a.rut AS INT) AS rut,
+                           a.dv,
+                           a.apellido_paterno,
+                           a.apellido_materno,
+                           a.nombres,
+                           b.spriden_pidm,
+                           c.cod_pers
+                    FROM VW_SL_MDIUC_PERSON a LEFT JOIN VW_SL_SATURN_SPRIDEN b
+                      ON CONCAT(a.rut, a.dv) = b.rut
+                    LEFT JOIN VW_SL_UC_BANNER_PERS c
+                      ON a.rut = c.rut"
+    outputJob:
+      - columns: []
+        destinationType: "databaseSQL"
+        destination:
+          databaseSQL:
+            dbTable: "TURING.dim_persona"
+            writeMode: "overwrite"
+      - columns: []
+        destination:
+          file:
+            containerName: "/mnt/gold/"
+            format:
+              parquet:
+                binaryAsString: true
+                compression: "SNAPPY"
+                mergeSchema: true
+            formatFile: "PARQUET"
+        destinationType: "file"
+        partitionBy: []
+        writeMode: "overwrite"
+
+# [
+# "/dbfs/FileStore/jars/config/dim_persona.yaml",
+# "pipelineapp",
+# "DIM/DIM_PERSONA/dim_persona.csv",
+# "DIM/DIM_PERSONA/dim_persona.csv",
+# "2021-07-02",
+# "scp_jdbc_databases",
+# "key_database_dev_stage_datagov",
+# "key_user_db_user",
+# "key_pwd_db_pwd",
+# "10000",
+# "10000",
+# "scp_event_hub",
+# "key_hub_monitoring_name",
+# "key_hub_metadata_name",
+# "key_hub_monitoring_connection_string",
+# "key_hub_metadata_connection_string",
+# "scp_adsl_g2_datalakeucdev",
+# "key_adsl_g2_datalakeucdev_id",
+# "key_adsl_g2_datalakeucdev_key",
+# "key_adsl_g2_datalakeucdev_tenan",
+# "datalakeucdev",
+# "bronze",
+# "silver",
+# "gold"
+# ]   
